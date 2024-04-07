@@ -6,6 +6,7 @@
 #include <stack>
 #include <algorithm>
 #include <cmath>
+#include <fstream>
 
 using namespace std;
 
@@ -16,19 +17,23 @@ using namespace std;
 #define ITERATIONS1 3000
 #define ITERATIONS2 1000
 
-int n;
-
-vector<vector<double>> distances;
-vector<pair<double, double>> coordinates;
-vector<int> path;
 vector<int> visited1;
 vector<int> visited2;
 vector<int> child1;
 vector<int> child2;
-vector<int> mst;
-vector<vector<int>> tree;
 
-int cnt = 0;
+struct sequence
+{
+    string chain;
+    int low, high;
+};
+
+string start;
+int length;
+int amount;
+vector<sequence> probes;
+vector<int> permutation;
+int permutationSize;
 
 class Solution
 {
@@ -49,15 +54,20 @@ public:
     void display()
     {
         cout << sum << endl;
-    }
-    void CalcLength()
-    {
-        this->sum = 0;
-        for (int i = 0; i < n - 1; i++)
+        for (int i = 0; i < permutationSize; i++)
         {
-            this->sum += distances[this->points[i] - 1][this->points[i + 1] - 1];
+            // cout << i + 1 << " " << probes[points[i]].low << " " << probes[points[i]].high << endl;
         }
-        this->sum += distances[this->points[n - 1] - 1][this->points[0] - 1];
+    }
+    void CalcValue()
+    {
+        this->sum = 0.0;
+        for (int i = 0; i < permutationSize; i++)
+        {
+            int position = i + 1;
+            this->sum += max(0, probes[points[i]].low - position);
+            this->sum += max(0, position - probes[points[i]].high);
+        }
     }
     bool operator<(const Solution &a) const
     {
@@ -83,151 +93,118 @@ vector<Solution> solutions;
 queue<Solution> best_of_generation;
 vector<Solution> extinct;
 
-vector<pair<double, double>> readInput(int n)
-{
-    vector<pair<double, double>> vertices;
-    double number, a, b;
-    for (int i = 0; i < n; i++) // reading the input
-    {
-        cin >> number >> a >> b;
-        vertices.push_back(make_pair(a, b));
-    }
-    return vertices;
-}
-
-double dist(double x1, double y1, double x2, double y2) // return euclidean distance between 2 points
-{
-    return sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2));
-}
-
-vector<vector<double>> lss_points(vector<pair<double, double>> points) // return adjacency matrix when given coordinates
-{
-    vector<vector<double>> distances;
-    vector<double> one_vertex;
-    double distance;
-    for (int i = 0; i < (int)points.size(); i++)
-    {
-        one_vertex.clear();
-        for (int j = 0; j < (int)points.size(); j++)
-        {
-            distance = dist(points[i].first, points[i].second, points[j].first, points[j].second);
-            one_vertex.push_back(distance);
-        }
-        distances.push_back(one_vertex);
-    }
-    return distances;
-}
-
 void random()
 {
-    for (int i = 0; i < POPULATION - 100; i++)
+    for (int i = 0; i < POPULATION; i++)
     {
-        random_shuffle(path.begin(), path.end()); // tasuje wierzcholki
-        Solution randomized(path, 0);
-        randomized.CalcLength();
+        random_shuffle(permutation.begin(), permutation.end()); // tasuje wierzcholki
+        Solution randomized(permutation, 0);
+        randomized.CalcValue();
         solutions.push_back(randomized);
-    }
-}
-
-int distribution(int siz)
-{
-    double pool = (float)rand() / (float)(RAND_MAX + 1); // 0-1
-    pool *= pow(pool, siz / 3);
-    pool *= siz;
-    return (int)pool;
-}
-
-void random2()
-{
-    vector<double> evaluate;
-    vector<bool> visited;
-    vector<pair<double, int>> valueandindex;
-    vector<int> route;
-    for (int j = 0; j < n; j++)
-    {
-        visited.push_back(false);
-        double sumofdist = 0;
-        for (int k = 0; k < n; k++)
-            sumofdist += distances[j][k];
-        evaluate.push_back(sumofdist);
-    }
-    for (int i = 0; i < 100; i++) // POPULATION
-    {
-        int d = 0;
-        for (int j = 0; j < n; j++)
-            visited[j] = false;
-        int current = rand() % n;
-        visited[current] = true;
-        route.clear();
-        route.push_back(current + 1);
-        for (int j = 1; j < n; j++) // EVERY STEP
-        {
-            valueandindex.clear();
-            for (int k = 0; k < n; k++)
-            {
-                if (visited[k] == false)
-                {
-                    valueandindex.push_back(make_pair(distances[current][k], k));
-                }
-            }
-            sort(valueandindex.begin(), valueandindex.end());
-            int index = distribution(valueandindex.size());
-            if (index > 10)
-                d++;
-            current = valueandindex[index].second;
-            route.push_back(current + 1);
-            visited[current] = true;
-            for (int k = 0; k < n; k++)
-            {
-                evaluate[k] -= distances[k][current];
-            }
-        }
-        Solution distributed(route, 0);
-        distributed.CalcLength();
-        solutions.push_back(distributed);
     }
 }
 
 void prepareCross()
 {
-    for (int j = 0; j <= n; j++)
+    for (int j = 0; j < permutationSize; j++)
     {
         visited1.push_back(0);
+        child1.push_back(0);
         visited2.push_back(0);
+        child2.push_back(0);
     }
 }
+
+void Cross()
+{
+    for (int i = 0; i < CROSSES; i++)
+    {
+        // Select parents
+        int parent1 = rand() % BEST;
+        int parent2 = rand() % POPULATION;
+        for (int j = 0; j < permutationSize; j++)
+        {
+            visited1[j] = 0;
+            visited2[j] = 0;
+        }
+        // Select 2 points
+        int a = rand() % permutationSize;
+        int b = rand() % permutationSize;
+        int index = a;
+        while (index != b)
+        {
+            // Mark visited sequences for both children
+            visited1[solutions[parent1].points[index]] = 1;
+            visited2[solutions[parent2].points[index]] = 1;
+            // Duplicate a part of a parent
+            child1[index] = solutions[parent1].points[index];
+            child2[index] = solutions[parent2].points[index];
+            // Move forward
+            index = (index + 1) % permutationSize;
+        }
+        visited1[solutions[parent1].points[index]] = 1;
+        visited2[solutions[parent2].points[index]] = 1;
+        // Duplicate a part of a parent
+        child1[index] = solutions[parent1].points[index];
+        child2[index] = solutions[parent2].points[index];
+        // Move forward
+        index = (index + 1) % permutationSize;
+        int index1 = index;
+        int index2 = index;
+        // Add unused points
+        for (int j = 0; j < permutationSize; j++)
+        {
+            if (visited1[solutions[parent2].points[index]] == 0)
+            {
+                child1[index1] = solutions[parent2].points[index];
+                index1 = (index1 + 1) % permutationSize;
+            }
+            if (visited2[solutions[parent1].points[index]] == 0)
+            {
+                child2[index2] = solutions[parent1].points[index];
+                index2 = (index2 + 1) % permutationSize;
+            }
+            // Move forward
+            index = (index + 1) % permutationSize;
+        }
+        if (child1.size() == 0)
+            return;
+        if (child2.size() == 0)
+            return;
+        Solution crossed1(child1, 0);
+        Solution crossed2(child2, 0);
+        crossed1.CalcValue();
+        crossed2.CalcValue();
+        solutions.push_back(crossed1);
+        solutions.push_back(crossed2);
+    }
+}
+
 void mutation(int which)
 {
     int option;
     int a, b;
     vector<int> change(0);
     option = rand() % 100;
-    if (option < 25)
+    option += 1000;
+    if (option < 33) // Swap 2 points
     {
-        a = rand() % n;
-        b = rand() % n;
+        a = rand() % permutationSize;
+        b = rand() % permutationSize;
         swap(solutions[which].points[a], solutions[which].points[b]);
     }
-    else if (option < 50)
+    else if (option < 66) // Move one point into an entirely new place
     {
-        a = rand() % n;
-        b = rand() % n;
-        if (b < a)
-            swap(a, b);
-        reverse(solutions[which].points.begin() + a, solutions[which].points.begin() + b);
-    }
-    else if (option < 75)
-    {
-        a = rand() % n;
-        b = rand() % n;
+        a = rand() % permutationSize;
+        b = rand() % permutationSize;
         change.push_back(solutions[which].points[a]);
         solutions[which].points.erase(solutions[which].points.begin() + a);
         solutions[which].points.insert(solutions[which].points.begin() + b, change[0]);
     }
-    else if (option < 100)
+    else if (option < 100) // Place a chunk of a solution into a different place
     {
-        a = rand() % n;
-        b = rand() % n;
+        a = rand() % permutationSize;
+        b = rand() % permutationSize;
         if (b < a)
             swap(a, b);
         for (int i = a; i < b; i++)
@@ -236,108 +213,7 @@ void mutation(int which)
         a = rand() % solutions[which].points.size();
         solutions[which].points.insert(solutions[which].points.begin() + a, change.begin(), change.end());
     }
-    solutions[which].CalcLength();
-}
-
-void orderCross()
-{
-    for (int i = 0; i < CROSSES; i++)
-    {
-        int parent1 = rand() % BEST;
-        int parent2 = rand() % POPULATION;
-        child1.clear();
-        child2.clear();
-        for (int j = 0; j <= n; j++)
-        {
-            visited1[j] = 0;
-            visited2[j] = 0;
-        }
-        int a = rand() % n;
-        int b = rand() % n;
-        // int b=(a+rand()%20)%n;
-        int index = a;
-        while (index != b)
-        {
-            visited1[solutions[parent1].points[index]] = 1;
-            visited2[solutions[parent2].points[index]] = 1;
-            index = (index + 1) % n;
-        }
-        visited1[solutions[parent1].points[index]] = 1;
-        visited2[solutions[parent2].points[index]] = 1;
-        if (a <= b)
-        {
-            index = 0;
-            while (child1.size() < a)
-            {
-                if (visited1[solutions[parent2].points[index]] == 0)
-                {
-                    child1.push_back(solutions[parent2].points[index]);
-                }
-                index++;
-            }
-            for (int j = a; j <= b; j++)
-            {
-                child1.push_back(solutions[parent1].points[j]);
-            }
-            for (int j = index; j < n; j++)
-            {
-                if (visited1[solutions[parent2].points[j]] == 0)
-                {
-                    child1.push_back(solutions[parent2].points[j]);
-                }
-            }
-            index = 0;
-            while (child2.size() < a)
-            {
-                if (visited2[solutions[parent1].points[index]] == 0)
-                {
-                    child2.push_back(solutions[parent1].points[index]);
-                }
-                index++;
-            }
-            for (int j = a; j <= b; j++)
-            {
-                child2.push_back(solutions[parent2].points[j]);
-            }
-            for (int j = index; j < n; j++)
-            {
-                if (visited2[solutions[parent1].points[j]] == 0)
-                {
-                    child2.push_back(solutions[parent1].points[j]);
-                }
-            }
-        }
-        else
-        {
-            for (int j = 0; j <= b; j++)
-            {
-                child1.push_back(solutions[parent1].points[j]);
-                child2.push_back(solutions[parent2].points[j]);
-            }
-            for (int j = 0; j < n; j++)
-            {
-                if (visited1[solutions[parent2].points[j]] == 0)
-                {
-                    child1.push_back(solutions[parent2].points[j]);
-                }
-                if (visited2[solutions[parent1].points[j]] == 0)
-                {
-                    child2.push_back(solutions[parent1].points[j]);
-                }
-            }
-            for (int j = a; j < n; j++)
-            {
-                child1.push_back(solutions[parent1].points[j]);
-                child2.push_back(solutions[parent2].points[j]);
-            }
-        }
-        Solution crossed1(child1, 0);
-        Solution crossed2(child2, 0);
-        crossed1.CalcLength();
-        crossed2.CalcLength();
-        solutions.push_back(crossed1);
-        solutions.push_back(crossed2);
-    }
+    solutions[which].CalcValue();
 }
 
 void massExtinction()
@@ -352,7 +228,6 @@ void massExtinction()
             extinct.push_back(solutions[0]);
             solutions.clear();
             random();
-            random2();
             best_of_generation = queue<Solution>(); // clears the queue
         }
         else
@@ -362,59 +237,54 @@ void massExtinction()
     }
 }
 
-Solution findGreedy()
-{
-    vector<int> greedyPoints;
-    vector<bool> visited;
-    for (int i = 0; i < n; i++)
-        visited.push_back(false);
-    double sum = 0;
-    double minimum = double(INT_MAX);
-    int currentpoint = 0;
-    int nextpoint = 0;
-    for (int i = 0; i < n - 1; i++)
-    {
-        minimum = double(INT_MAX);
-        visited[currentpoint] = true;
-        for (int j = 0; j < n; j++)
-        {
-            if (visited[j] == false && distances[currentpoint][j] < minimum)
-            {
-                minimum = distances[currentpoint][j];
-                nextpoint = j;
-            }
-        }
-        sum += minimum;
-        currentpoint = nextpoint;
-        greedyPoints.push_back(nextpoint + 1);
-    }
-    greedyPoints.push_back(1);
-    sum += distances[currentpoint][0];
-    Solution res(greedyPoints, sum);
-    solutions.push_back(res);
-    return res;
-}
-
 int main()
 {
     ios_base::sync_with_stdio(0);
     cin.tie(0);
-    srand(time(0));
-    cin >> n;
-    coordinates = readInput(n);
-    distances = lss_points(coordinates); // adjacency matrix
+    ifstream inputFile("output.txt");
+    if (!inputFile.is_open())
+    {
+        cout << "Failed to open the file." << endl;
+        return 1;
+    }
 
-    for (int i = 1; i <= n; i++)
-        path.push_back(i);
+    // Read length, start, and amount from the file
+    inputFile >> length;
+    inputFile >> start;
+    inputFile >> amount;
+
+    sequence curr;
+    for (int i = 0; i < amount; i++)
+    {
+        inputFile >> curr.chain >> curr.low >> curr.high;
+        probes.push_back(curr);
+    }
+    inputFile.close();
+
+    sequence dummy;
+    dummy.chain = "";
+    for (int i = 0; i < start.size(); i++)
+        dummy.chain += "X";
+    dummy.low = -1;
+    dummy.high = length + 1;
+    // Add dummies
+    for (int i = amount; i < length - dummy.chain.size(); i++)
+        probes.push_back(dummy);
+
+    srand(time(0));
+
+    for (int i = 0; i < probes.size(); i++)
+        permutation.push_back(i);
+
+    permutationSize = probes.size();
     random();
-    cout << "aaa" << endl;
-    random2();
     prepareCross();
+
     sort(solutions.begin(), solutions.end());
 
     for (int k = 0; k < ITERATIONS1; k++)
     {
-        if (k % 200 == 0)
+        if (k % 1 == 0)
         {
             cout << k << endl;
             solutions[0].display();
@@ -422,9 +292,11 @@ int main()
         for (int i = solutions.size() - 1; i >= 1; i--)
         {
             if (solutions[i - 1].sum == solutions[i].sum)
+            {
                 mutation(i);
+            }
         }
-        orderCross();
+        Cross();
         sort(solutions.begin(), solutions.end());
         solutions.erase(solutions.begin() + POPULATION, solutions.end());
         massExtinction();
@@ -451,18 +323,14 @@ int main()
             if (solutions[i - 1].sum == solutions[i].sum)
                 mutation(i);
         }
-        orderCross();
+        Cross();
         sort(solutions.begin(), solutions.end());
         solutions.erase(solutions.begin() + POPULATION, solutions.end());
     }
 
     cout << "Final:" << endl;
     cout << solutions[0].sum << endl;
-    for (int i = 0; i < n; i++)
+    for (int i = 0; i < permutationSize; i++)
         cout << solutions[0].points[i] << " - ";
     cout << endl;
-
-    cout << "Greedy:" << endl;
-    Solution greedy = findGreedy();
-    cout << greedy.sum << endl;
 }
