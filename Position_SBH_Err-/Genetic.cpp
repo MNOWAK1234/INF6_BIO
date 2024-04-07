@@ -34,6 +34,8 @@ int amount;
 vector<sequence> probes;
 vector<int> permutation;
 int permutationSize;
+int sequenceLength;
+vector<int> A, C, T, G;
 
 class Solution
 {
@@ -62,11 +64,80 @@ public:
     void CalcValue()
     {
         this->sum = 0.0;
+        // Add position error
         for (int i = 0; i < permutationSize; i++)
         {
             int position = i + 1;
             this->sum += max(0, probes[points[i]].low - position);
             this->sum += max(0, position - probes[points[i]].high);
+        }
+        // Prepare for matching error
+        for (int i = 0; i < length; i++)
+        {
+            A[i] = 0;
+            C[i] = 0;
+            T[i] = 0;
+            G[i] = 0;
+        }
+        // Add nucleotides from starting sequence
+        for (int i = 0; i < start.size(); i++)
+        {
+            switch (start[i])
+            {
+            case 'A':
+                A[i]++;
+                break;
+            case 'C':
+                C[i]++;
+                break;
+            case 'T':
+                T[i]++;
+                break;
+            case 'G':
+                G[i]++;
+                break;
+            }
+        }
+        // Add nucleotides from further sequences
+        for (int i = 0; i < permutationSize; i++)
+        {
+            for (int j = 0; j < sequenceLength; j++)
+            {
+                if (probes[points[i]].chain[j] == 'X')
+                    break;
+                switch (probes[points[i]].chain[j])
+                {
+                case 'A':
+                    A[i + 1]++;
+                    break;
+                case 'C':
+                    C[i + 1]++;
+                    break;
+                case 'T':
+                    T[i + 1]++;
+                    break;
+                case 'G':
+                    G[i + 1]++;
+                    break;
+                }
+            }
+        }
+        // Calculate and add entropy factor
+        for (int i = 0; i < length; i++)
+        {
+            double mismatches = 0.0;
+            double specified = A[i] + C[i] + T[i] + G[i];
+            mismatches += A[i] * (specified - A[i]);
+            mismatches += C[i] * (specified - C[i]);
+            mismatches += T[i] * (specified - T[i]);
+            mismatches += G[i] * (specified - G[i]);
+            mismatches /= 2;
+            this->sum += mismatches;
+            // Add bonus for no mismatches
+            if (max(max(A[i], C[i]), max(T[i], G[i])) == specified)
+            {
+                this->sum -= 50;
+            }
         }
     }
     bool operator<(const Solution &a) const
@@ -263,7 +334,8 @@ int main()
 
     sequence dummy;
     dummy.chain = "";
-    for (int i = 0; i < start.size(); i++)
+    sequenceLength = start.size();
+    for (int i = 0; i < sequenceLength; i++)
         dummy.chain += "X";
     dummy.low = -1;
     dummy.high = length + 1;
@@ -277,6 +349,15 @@ int main()
         permutation.push_back(i);
 
     permutationSize = probes.size();
+    int finish = length - dummy.chain.size() + 1;
+    // Prepare vectors for entropy calculation
+    for (int i = 0; i < length; i++)
+    {
+        A.push_back(0);
+        C.push_back(0);
+        T.push_back(0);
+        G.push_back(0);
+    }
     random();
     prepareCross();
 
@@ -288,6 +369,16 @@ int main()
         {
             cout << k << endl;
             solutions[0].display();
+            if (k % 100 != 0)
+                continue;
+            cout << "0: " << start << endl;
+            for (int i = 1; i < finish; i++)
+            {
+                cout << i << ": ";
+                for (int j = 0; j < i; j++)
+                    cout << " ";
+                cout << probes[solutions[0].points[i - 1]].chain << " " << probes[solutions[0].points[i - 1]].low << " " << probes[solutions[0].points[i - 1]].high << endl;
+            }
         }
         for (int i = solutions.size() - 1; i >= 1; i--)
         {
