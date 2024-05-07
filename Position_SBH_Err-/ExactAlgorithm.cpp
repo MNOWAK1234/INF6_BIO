@@ -106,7 +106,7 @@ bool traverse(string current, int position, int finished)
 
 int main()
 {
-    ifstream inputFile("output.txt");
+    ifstream inputFile("TestCase.txt");
     if (!inputFile.is_open())
     {
         cout << "Failed to open the file." << endl;

@@ -1,5 +1,7 @@
 #include <iostream>
 #include <vector>
+#include <random>
+#include <chrono>
 #include <cstdlib>
 #include <time.h>
 #include <queue>
@@ -16,38 +18,43 @@ using namespace std;
 #define STABLE 400
 #define ITERATIONS1 3000
 #define ITERATIONS2 1000
+#define MAXDEPTH 2
 
 vector<int> visited1;
 vector<int> visited2;
 vector<int> child1;
 vector<int> child2;
 
-struct sequence
-{
-    string chain;
-    int low, high;
-};
-
 string start;
 int length;
 int amount;
-vector<sequence> probes;
+vector<string> probes;
+vector<int> lows;
+vector<int> highs;
+vector<vector<int>> similarity;
+vector<vector<int>> similaritySquared;
+int range;
+vector<vector<int>> similarityRanged;
+int probeSize;
+int startIndex;
 vector<int> permutation;
 int permutationSize;
-int sequenceLength;
-vector<int> A, C, T, G;
+vector<bool> taken;
+int bestIndex;
+int minimum;
+vector<int> HungarianNext;
+vector<int> visited;
 
 class Solution
 {
 public:
     vector<int> points;
     double sum;
-    Solution()
+    Solution() // default constructor is necessary for resize to work
     {
         this->points = vector<int>();
         this->sum = 0;
     }
-    // default constructor is necessary for resize to work
     Solution(vector<int> points, double sum)
     {
         this->points = points;
@@ -56,89 +63,30 @@ public:
     void display()
     {
         cout << sum << endl;
-        for (int i = 0; i < permutationSize; i++)
-        {
-            // cout << i + 1 << " " << probes[points[i]].low << " " << probes[points[i]].high << endl;
-        }
     }
     void CalcValue()
     {
         this->sum = 0.0;
-        // Add position error
-        for (int i = 0; i < permutationSize; i++)
+        int position = 2;
+        for (int i = 1; i < permutationSize; i++)
         {
-            int position = i + 1;
-            this->sum += max(0, probes[points[i]].low - position);
-            this->sum += max(0, position - probes[points[i]].high);
-        }
-        // Prepare for matching error
-        for (int i = 0; i < length; i++)
-        {
-            A[i] = 0;
-            C[i] = 0;
-            T[i] = 0;
-            G[i] = 0;
-        }
-        // Add nucleotides from starting sequence
-        for (int i = 0; i < start.size(); i++)
-        {
-            switch (start[i])
+            // Matching error
+            int matchingError = similarity[this->points[i - 1]][this->points[i]];
+            this->sum += (matchingError * matchingError);
+            // Add position error
+            position += matchingError;
+            if (position < lows[points[i]])
             {
-            case 'A':
-                A[i]++;
-                break;
-            case 'C':
-                C[i]++;
-                break;
-            case 'T':
-                T[i]++;
-                break;
-            case 'G':
-                G[i]++;
-                break;
+                this->sum += probeSize * probeSize;
             }
-        }
-        // Add nucleotides from further sequences
-        for (int i = 0; i < permutationSize; i++)
-        {
-            for (int j = 0; j < sequenceLength; j++)
+            if (position > highs[points[i]])
             {
-                if (probes[points[i]].chain[j] == 'X')
-                    break;
-                switch (probes[points[i]].chain[j])
-                {
-                case 'A':
-                    A[i + 1]++;
-                    break;
-                case 'C':
-                    C[i + 1]++;
-                    break;
-                case 'T':
-                    T[i + 1]++;
-                    break;
-                case 'G':
-                    G[i + 1]++;
-                    break;
-                }
+                this->sum += probeSize * probeSize;
             }
+            // this->sum += max(0, lows[points[i]] - position);
+            // this->sum += max(0, position - highs[points[i]]);
         }
-        // Calculate and add entropy factor
-        for (int i = 0; i < length; i++)
-        {
-            double mismatches = 0.0;
-            double specified = A[i] + C[i] + T[i] + G[i];
-            mismatches += A[i] * (specified - A[i]);
-            mismatches += C[i] * (specified - C[i]);
-            mismatches += T[i] * (specified - T[i]);
-            mismatches += G[i] * (specified - G[i]);
-            mismatches /= 2;
-            this->sum += mismatches;
-            // Add bonus for no mismatches
-            if (max(max(A[i], C[i]), max(T[i], G[i])) == specified)
-            {
-                this->sum -= 50;
-            }
-        }
+        // this->sum += (position - length) * (position - length);
     }
     bool operator<(const Solution &a) const
     {
@@ -164,15 +112,449 @@ vector<Solution> solutions;
 queue<Solution> best_of_generation;
 vector<Solution> extinct;
 
-void random()
+void checkSolution(Solution a)
+{
+    vector<int> used;
+    for (int i = 0; i < amount; i++)
+        used.push_back(0);
+    for (int i = 0; i < a.points.size(); i++)
+    {
+        used[a.points[i]]++;
+        if (used[a.points[i]] > 1)
+        {
+            cout << "zle jest " << a.points[i] << " a ja juz przetworzylem " << i << endl;
+        }
+    }
+}
+
+void calcSimilarity()
+{
+    for (int i = 0; i < (int)probes.size(); i++)
+    {
+        for (int j = 0; j < (int)probes.size(); j++)
+        {
+            if (i == j)
+                continue;
+            string first = probes[i];
+            string second = probes[j];
+            for (int k = 1; k < probeSize - 1; k++)
+            {
+                bool match = true;
+                for (int l = k; l < probeSize; l++)
+                {
+                    if (first[l] != second[l - k])
+                    {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match == true)
+                {
+                    similarity[i][j] = k;
+                    break;
+                }
+            }
+            if (similarity[i][j] == 0)
+                similarity[i][j] = probeSize;
+            similaritySquared[i][j] = similarity[i][j] * similarity[i][j];
+            similarityRanged[i][j] = similarity[i][j] + min(max(0, range - abs(lows[i] - lows[j])), probeSize);
+        }
+        similarity[i][i] = 10000;
+        similaritySquared[i][i] = 10000;
+        similarityRanged[i][i] = 10000;
+    }
+}
+
+void addRandom()
 {
     for (int i = 0; i < POPULATION; i++)
     {
-        random_shuffle(permutation.begin(), permutation.end()); // tasuje wierzcholki
+        unsigned seed = chrono::system_clock::now().time_since_epoch().count();
+        mt19937 g(seed);
+        shuffle(permutation.begin(), permutation.end(), g);
         Solution randomized(permutation, 0);
         randomized.CalcValue();
         solutions.push_back(randomized);
     }
+}
+
+int ReducedBB(int prevIndex, int depth, int score)
+{
+    if (depth == 0 || score > minimum)
+        return score;
+    depth--;
+    int passedScore;
+    int retreivedScore;
+    int localBestScore = 10000;
+    for (int i = 0; i < (int)probes.size(); i++)
+    {
+        if (taken[i] == true)
+            continue;
+        passedScore = score + similarityRanged[prevIndex][i];
+        taken[i] = true;
+        retreivedScore = ReducedBB(i, depth, passedScore);
+        taken[i] = false;
+        if (retreivedScore < localBestScore)
+        {
+            localBestScore = retreivedScore;
+            // If we are choosing the first next probe
+            // Remember its index
+            if (score == 0)
+            {
+                bestIndex = i;
+                minimum = localBestScore;
+            }
+        }
+    }
+    return localBestScore;
+}
+
+void addReducedBB()
+{
+    minimum = 10000000;
+    vector<int> path;
+    path.push_back(startIndex);
+    int prevIndex = startIndex;
+    int depth;
+    while ((int)path.size() < amount)
+    {
+        minimum = 100000;
+        // Avoid searching after the path is finished
+        depth = min(MAXDEPTH, amount - (int)path.size());
+        int score = ReducedBB(prevIndex, depth, 0);
+        prevIndex = bestIndex;
+        path.push_back(prevIndex);
+        taken[bestIndex] = true;
+    }
+    Solution fromBB(path, 0);
+    fromBB.CalcValue();
+    solutions.push_back(fromBB);
+}
+
+long long Hungarian(int sizeGroup1, int sizeGroup2, vector<vector<int>> cost)
+{
+    long long infinity = 1000000000000000000;
+    long long minimum;
+    // 1. Prepare matrix structure
+    //---By making it square
+    if (sizeGroup1 < sizeGroup2)
+    {
+        vector<int> temporal;
+        for (int i = 0; i < sizeGroup2; i++)
+        {
+            temporal.push_back(2);
+        }
+        int difference = sizeGroup2 - sizeGroup1;
+        for (int i = 0; i < difference; i++)
+        {
+            cost.push_back(temporal);
+        }
+    }
+    if (sizeGroup1 > sizeGroup2)
+    {
+        int difference = sizeGroup1 - sizeGroup2;
+        for (int i = 0; i < sizeGroup1; i++)
+        {
+            for (int j = 0; j < difference; j++)
+            {
+                cost[i].push_back(2);
+            }
+        }
+    }
+    int size = max(sizeGroup1, sizeGroup2);
+    vector<vector<int>> matrix = cost;
+    // 2. Subtract smallest element from each row
+    for (int i = 0; i < size; i++)
+    {
+        minimum = infinity;
+        for (int j = 0; j < size; j++)
+        {
+            if (matrix[i][j] < minimum)
+            {
+                minimum = matrix[i][j];
+            }
+        }
+        for (int j = 0; j < size; j++)
+        {
+            matrix[i][j] -= minimum;
+        }
+    }
+    // 3. Subtract smallest element from each column
+    for (int i = 0; i < size; i++)
+    {
+        minimum = infinity;
+        for (int j = 0; j < size; j++)
+        {
+            if (matrix[j][i] < minimum)
+            {
+                minimum = matrix[j][i];
+            }
+        }
+        for (int j = 0; j < size; j++)
+        {
+            matrix[j][i] -= minimum;
+        }
+    }
+    // 4. Prepare checking for the optimal solution
+    vector<int> column;
+    vector<int> row;
+    vector<int> markedZeroColumn;
+    vector<int> markedZeroRow;
+    vector<int> primedZero;
+    for (int i = 0; i < size; i++)
+    {
+        column.push_back(0);
+        row.push_back(0);
+        markedZeroColumn.push_back(-1);
+        markedZeroRow.push_back(-1);
+        primedZero.push_back(-1);
+    }
+    int lines = 0;
+    // 5. Start checking
+    //---Cross all the 0s in the matrix
+    //---If the number of lines used is equal to the size of the group
+    //---Then the marked zeros are the optimal solution
+    while (lines < size)
+    {
+        // 6. Empty helping arrays
+        //---This must be done, because after augmenting we need to delete all lines
+        for (int i = 0; i < size; i++)
+        {
+            column[i] = 0;
+            row[i] = 0;
+            primedZero[i] = -1;
+        }
+        // 7. Find the marked zeros in each row
+        //---Those are assignments in the solution
+        for (int i = 0; i < size; i++)
+        {
+            // Check if there is an already marked zero in this row
+            if (markedZeroRow[i] != -1)
+            {
+                // Cross the appropriate column
+                column[markedZeroRow[i]] = 1;
+            }
+            else
+            {
+                // Try to find an unmarked zero in this row
+                for (int j = 0; j < size; j++)
+                {
+                    if (matrix[i][j] == 0 && column[j] != 1)
+                    {
+                        lines++;
+                        column[j] = 1;
+                        markedZeroRow[i] = j;
+                        markedZeroColumn[j] = i;
+                        // There is no need to check the other elements in this row
+                        break;
+                    }
+                }
+            }
+        }
+        // 8. Start finding uncovered zeros
+        bool foundZero = true;
+        while (foundZero == true)
+        {
+            foundZero = false;
+            // This variable is used to break the loop
+            // After an augmenting path was found
+            // This variable is needed to exit the nested loops
+            bool startAgain = false;
+            for (int i = 0; i < size; i++)
+            {
+                for (int j = 0; j < size; j++)
+                {
+                    if (matrix[i][j] == 0 && row[i] != 1 && column[j] != 1)
+                    {
+                        foundZero = true;
+                        // 9. Classify this zero
+                        if (markedZeroRow[i] != -1)
+                        {
+                            // 10. Handle the first case
+                            //----If the zero is on the same row as a marked zero
+                            //----Then cover the corresponding row
+                            //----And uncover the column of the marked zero
+                            //----Denote this zero as 'primed'
+                            //----That means it may be used in augmenting paths
+                            column[markedZeroRow[i]] = 0;
+                            row[i] = 1;
+                            primedZero[i] = j;
+                            // There is no need to check other elements in this row
+                            break;
+                        }
+                        else
+                        {
+                            // 11. Handle the second case
+                            //----Find augmenting path from this zero
+                            //----Alternating between marked and primed zeros
+                            int foundRow = i;
+                            int foundColumn = j;
+                            while (markedZeroColumn[foundColumn] != -1)
+                            {
+                                int primedRow = markedZeroColumn[foundColumn];
+                                int primedColumn = primedZero[primedRow];
+                                // Make found zero the marked zero
+                                markedZeroColumn[foundColumn] = foundRow;
+                                markedZeroRow[foundRow] = foundColumn;
+                                // Augument further from the primed zero
+                                foundRow = primedRow;
+                                foundColumn = primedColumn;
+                            }
+                            // Make the last primed zero the marked zero
+                            markedZeroColumn[foundColumn] = foundRow;
+                            markedZeroRow[foundRow] = foundColumn;
+                            // 12. Update line count
+                            lines++;
+                            // 13. Exit the loop
+                            startAgain = true;
+                            break;
+                        }
+                    }
+                }
+                // 14. Continue exiting
+                if (startAgain == true)
+                    break;
+            }
+            // 15. Continue exiting
+            if (startAgain == true)
+                break;
+        }
+        // 16. Check if the optimal solution was found
+        if (lines == size)
+        {
+            break;
+        }
+        // 17. Else reweight the values
+        //----Find the minimum uncovered value
+        //----Then subtract it from the uncovered elements
+        //----And add it to all the elements at the intersections
+        minimum = infinity;
+        for (int i = 0; i < size; i++)
+        {
+            for (int j = 0; j < size; j++)
+            {
+                if (row[i] == 0 && column[j] == 0)
+                {
+                    if (matrix[i][j] < minimum)
+                    {
+                        minimum = matrix[i][j];
+                    }
+                }
+            }
+        }
+        for (int i = 0; i < size; i++)
+        {
+            for (int j = 0; j < size; j++)
+            {
+                if (row[i] == 0 && column[j] == 0)
+                {
+                    matrix[i][j] -= minimum;
+                }
+                else if (row[i] == 1 && column[j] == 1)
+                {
+                    matrix[i][j] += minimum;
+                }
+            }
+        }
+    }
+    // 18. Calculate the result
+    long long result = 0;
+    for (int i = 0; i < size; i++)
+    {
+        result += cost[i][markedZeroRow[i]];
+        // cout << i << " " << markedZeroRow[i] << endl;
+        HungarianNext.push_back(markedZeroRow[i]);
+        // cout << probes[i] << " " << probes[markedZeroRow[i]] << endl;
+    }
+    return result;
+}
+
+// returns the number of joint components
+int components(int vertices, vector<int> next)
+{
+    for (int i = 0; i < amount; i++)
+        visited[i] = 0;
+    int count = 0;
+    for (int i = 0; i < vertices; i++)
+    {
+        if (visited[i] == 0)
+        {
+            count++;
+            visited[i] = 1;
+            int nextNode = next[i];
+            while (visited[nextNode] == 0)
+            {
+                visited[nextNode] = 1;
+                nextNode = next[nextNode];
+            }
+        }
+    }
+    return count;
+}
+
+void addHungarian()
+{
+    long long ans = Hungarian(amount, amount, similarity);
+    int component = components(amount, HungarianNext);
+    for (int i = 0; i < amount; i++)
+        visited[i] = 0;
+    visited[startIndex] = 1;
+    vector<int> path;
+    int currNode = startIndex;
+    int nextNode = HungarianNext[currNode];
+    while (visited[nextNode] == 0)
+    {
+        nextNode = HungarianNext[currNode];
+        path.push_back(currNode);
+        visited[currNode] = 1;
+        currNode = nextNode;
+    }
+    vector<int> nextComponent;
+    minimum = 1000;
+    int after, before;
+    for (int k = 1; k < component; k++)
+    {
+        nextComponent.clear();
+        minimum = 1000000;
+        for (int i = 0; i < amount; i++)
+        {
+            if (visited[i] == 0)
+            {
+                for (int j = 0; j < amount; j++)
+                {
+                    if (visited[j] == 1)
+                    {
+                        if (similarity[j][i] < minimum)
+                        {
+                            minimum = similarity[j][i];
+                            before = j;
+                            after = i;
+                        }
+                    }
+                }
+            }
+        }
+        visited[after] = 1;
+        currNode = after;
+        nextNode = HungarianNext[currNode];
+        while (visited[nextNode] == 0)
+        {
+            nextNode = HungarianNext[currNode];
+            nextComponent.push_back(currNode);
+            visited[currNode] = 1;
+            currNode = nextNode;
+        }
+        int target = before;
+        auto it = find(path.begin(), path.end(), target);
+        if (it != path.end())
+        {
+            path.insert(it + 1, nextComponent.begin(), nextComponent.end());
+        }
+    }
+    Solution assignment(path, 0);
+    checkSolution(assignment);
+    assignment.CalcValue();
+    solutions.push_back(assignment);
 }
 
 void prepareCross()
@@ -298,7 +680,7 @@ void massExtinction()
         {
             extinct.push_back(solutions[0]);
             solutions.clear();
-            random();
+            addRandom();
             best_of_generation = queue<Solution>(); // clears the queue
         }
         else
@@ -312,7 +694,7 @@ int main()
 {
     ios_base::sync_with_stdio(0);
     cin.tie(0);
-    ifstream inputFile("output.txt");
+    ifstream inputFile("TestCase.txt");
     if (!inputFile.is_open())
     {
         cout << "Failed to open the file." << endl;
@@ -323,62 +705,60 @@ int main()
     inputFile >> length;
     inputFile >> start;
     inputFile >> amount;
-
-    sequence curr;
+    probeSize = start.size();
+    string chain;
+    int low, high;
     for (int i = 0; i < amount; i++)
     {
-        inputFile >> curr.chain >> curr.low >> curr.high;
-        probes.push_back(curr);
+        inputFile >> chain >> low >> high;
+        probes.push_back(chain);
+        lows.push_back(low);
+        highs.push_back(high);
+        taken.push_back(false);
+        visited.push_back(0);
     }
+    // Add starting sequence
+    probes.push_back(start);
+    lows.push_back(1);
+    highs.push_back(1);
+    taken.push_back(true);
+    visited.push_back(0);
+    amount++;
+    startIndex = amount - 1;
+    range = highs[0] - lows[0];
     inputFile.close();
-
-    sequence dummy;
-    dummy.chain = "";
-    sequenceLength = start.size();
-    for (int i = 0; i < sequenceLength; i++)
-        dummy.chain += "X";
-    dummy.low = -1;
-    dummy.high = length + 1;
-    // Add dummies
-    for (int i = amount; i < length - dummy.chain.size(); i++)
-        probes.push_back(dummy);
-
-    srand(time(0));
-
+    cout << "Data read successfully" << endl;
+    // Calculate similarities between probes
+    vector<int> tmp;
+    for (int i = 0; i < amount; i++)
+        tmp.push_back(0);
+    for (int i = 0; i < amount; i++)
+        similarity.push_back(tmp);
+    similaritySquared = similarity;
+    similarityRanged = similarity;
     for (int i = 0; i < probes.size(); i++)
         permutation.push_back(i);
-
+    calcSimilarity();
+    cout << "Similarity calculated successfully" << endl;
+    // Prepare variables for genetic algorithm
     permutationSize = probes.size();
-    int finish = length - dummy.chain.size() + 1;
-    // Prepare vectors for entropy calculation
-    for (int i = 0; i < length; i++)
-    {
-        A.push_back(0);
-        C.push_back(0);
-        T.push_back(0);
-        G.push_back(0);
-    }
-    random();
+    addRandom();
+    cout << "Random solutions added successfully" << endl;
+    addReducedBB();
+    cout << "RBB added successfully" << endl;
+    addHungarian();
+    cout << "Hungarian added successfully" << endl;
     prepareCross();
 
     sort(solutions.begin(), solutions.end());
 
     for (int k = 0; k < ITERATIONS1; k++)
     {
-        if (k % 1 == 0)
+        if (k % 10 == 0)
         {
-            cout << k << endl;
+            cout << k << ": ";
             solutions[0].display();
-            if (k % 100 != 0)
-                continue;
-            cout << "0: " << start << endl;
-            for (int i = 1; i < finish; i++)
-            {
-                cout << i << ": ";
-                for (int j = 0; j < i; j++)
-                    cout << " ";
-                cout << probes[solutions[0].points[i - 1]].chain << " " << probes[solutions[0].points[i - 1]].low << " " << probes[solutions[0].points[i - 1]].high << endl;
-            }
+            checkSolution(solutions[0]);
         }
         for (int i = solutions.size() - 1; i >= 1; i--)
         {
@@ -404,7 +784,8 @@ int main()
 
     for (int k = 0; k < ITERATIONS2; k++)
     {
-        if (k % 100 == 0)
+        checkSolution(solutions[0]);
+        if (k % 10 == 0)
         {
             cout << k << endl;
             solutions[0].display();
@@ -421,7 +802,14 @@ int main()
 
     cout << "Final:" << endl;
     cout << solutions[0].sum << endl;
-    for (int i = 0; i < permutationSize; i++)
-        cout << solutions[0].points[i] << " - ";
+    int position = 2;
+    cout << "1: " << start << endl;
+    for (int i = 1; i < permutationSize; i++)
+    {
+        cout << position << ": " << solutions[0].points[i] << " " << probes[solutions[0].points[i]] << " low: " << lows[solutions[0].points[i]] << " high: " << highs[solutions[0].points[i]] << " similarity ";
+        int error = similarity[solutions[0].points[i - 1]][solutions[0].points[i]];
+        position += error;
+        cout << error << endl;
+    }
     cout << endl;
 }
